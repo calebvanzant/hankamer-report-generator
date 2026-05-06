@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from geo_tiles import generate_geo_tiles_png
 
 # ── page config ──────────────────────────────────────────────────
 st.set_page_config(
@@ -470,6 +471,17 @@ if uploaded_file:
 
             if "slide3_footnote" in bullets:
                 set_text(slide3, "Text 16", bullets["slide3_footnote"])
+
+            # Replace static image with geo tile grid
+            geo_target = find_shape(slide3, "Image 0")
+            if geo_target:
+                png_bytes = generate_geo_tiles_png(all_state_rows, grand_total=grand_total)
+                left, top, width, height = (geo_target.left, geo_target.top,
+                                            geo_target.width, geo_target.height)
+                slide3.shapes._spTree.remove(geo_target._element)
+                pic = slide3.shapes.add_picture(
+                    io.BytesIO(png_bytes), left, top, width, height)
+                pic.name = "Image 0"
 
             log("✔ Slide 3 done")
 
