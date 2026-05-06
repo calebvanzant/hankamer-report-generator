@@ -28,6 +28,8 @@ from pptx import Presentation
 from pptx.util import Pt
 from pptx.dml.color import RGBColor
 from lxml import etree
+from hex_map import generate_hex_map_png
+import io
 
 # ── paths ────────────────────────────────────────────────────────
 BASE       = Path(__file__).parent
@@ -215,6 +217,30 @@ def update_chart_data(chart_shape, sheet_name: str, data_rows: list,
     wb.save(buf)
     xlsx_part._blob = buf.getvalue()
     print(f"  ✔ Chart '{chart_shape.name}' updated")
+
+
+# ── hex map helpers ───────────────────────────────────────────────
+
+def replace_hex_map(slide, state_counts, shape_name="Image 0"):
+    """Replace the static hex map PNG on slide 3 with an auto-generated one."""
+    target = None
+    for shape in slide.shapes:
+        if shape.name == shape_name:
+            target = shape
+            break
+    if target is None:
+        raise ValueError(f"Shape '{shape_name}' not found. "
+                         f"Available: {[s.name for s in slide.shapes]}")
+
+    png_bytes = generate_hex_map_png(state_counts)
+    left, top, width, height = target.left, target.top, target.width, target.height
+
+    sp_tree = slide.shapes._spTree
+    sp_tree.remove(target._element)
+
+    pic = slide.shapes.add_picture(io.BytesIO(png_bytes), left, top, width, height)
+    pic.name = shape_name
+    return pic
 
 
 # ── main ─────────────────────────────────────────────────────────
@@ -548,6 +574,10 @@ def main():
     else:
         safe_ay  = ay.replace("–","-").replace("/","-")
         out_path = OUTPUT_DIR / f"Hankamer_Report_AY{safe_ay}.pptx"
+
+    # Generate and insert hex map on slide 3
+    state_counts = {abbr: cnt for abbr, cnt, _ in st_rows}
+    replace_hex_map(prs.slides[2], state_counts)
 
     prs.save(str(out_path))
     print(f"\n✔ Report saved to: {out_path}")
