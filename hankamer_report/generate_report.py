@@ -30,6 +30,7 @@ from pptx.dml.color import RGBColor
 from lxml import etree
 from hex_map import generate_hex_map_png
 from geo_tiles import generate_geo_tiles_png
+from slide_visuals import top10_bars_png, companion_dots_png, large_events_png
 import io
 
 # ── paths ────────────────────────────────────────────────────────
@@ -352,6 +353,30 @@ def main():
     if not all_state_rows:
         all_state_rows = [(a, c) for a, c, _ in st_rows]  # fallback to top10
 
+    # ── parse large_events ───────────────────────────────────────
+    le_df = sheets.get("large_events")
+    large_events = []
+    if le_df is not None:
+        for i in range(2, 20):
+            name  = str_val(le_df, i, 0)
+            n_ev  = int_val(le_df, i, 1, 0)
+            per_s = int_val(le_df, i, 2, 0)
+            tot_s = int_val(le_df, i, 3, 0)
+            tot_v = int_val(le_df, i, 4, 0)
+            note  = str_val(le_df, i, 5)
+            if not name or not n_ev:
+                continue
+            students = tot_s if tot_s else (per_s if per_s else None)
+            large_events.append({"name": name, "students": students or None,
+                                  "total": tot_v or None, "note": note or ""})
+    if not large_events:
+        large_events = [
+            {"name": "Fall Premiere",           "students": 445, "total": 820,  "note": ""},
+            {"name": "Spring Premiere",          "students": 445, "total": 820,  "note": ""},
+            {"name": "Baylor Scholars Days",     "students": 100, "total": None, "note": "2 events, ~100 students each"},
+            {"name": "Invitation 2 Excellence",  "students": 204, "total": None, "note": "2 events, 204 total students"},
+        ]
+
     # ── parse regional ───────────────────────────────────────────
     # Rows 3–8 (0-based: 2–7): A=region, B=count
     reg_rows = []
@@ -539,46 +564,37 @@ def main():
     # ════════════════════════════════════════════════════════════
     print("  Slide 4...")
 
-    # Companion table (Table 0)
+    # Replace companion Table 0 with dot-scale PNG
     tbl_shape = find_shape(slide4, "Table 0")
     if tbl_shape:
-        tbl = tbl_shape.table
-        for i, (ctype, freq) in enumerate(comp_rows):
-            row_idx = i + 1  # skip header
-            if row_idx < len(tbl.rows):
-                update_table_cell(tbl, row_idx, 0, ctype)
-                update_table_cell(tbl, row_idx, 1, freq)
+        left_t, top_t = tbl_shape.left, tbl_shape.top
+        width_t, height_t = tbl_shape.width, tbl_shape.height
+        slide4.shapes._spTree.remove(tbl_shape._element)
+        comp_png = companion_dots_png(comp_rows)
+        pic = slide4.shapes.add_picture(io.BytesIO(comp_png), left_t, top_t, width_t, height_t)
+        pic.name = "Table 0"
 
-    # Family engagement bullets (Text 9)
-    sh = find_shape(slide4, "Text 9")
-    if sh and sh.has_text_frame:
-        paras = sh.text_frame.paragraphs
-        for i, key in enumerate(["engage_1","engage_2","engage_3"]):
-            if i < len(paras) and key in bullets:
-                if paras[i].runs:
-                    paras[i].runs[0].text = bullets[key]
-
-    # Slide 4 footnote (Text 10)
-    if footnote4:
-        replace_shape_text(slide4, "Text 10", footnote4)
-
-    # Footer (Text 12)
-    if footer_text:
-        replace_shape_text(slide4, "Text 12", footer_text)
-
-    # ── Top 10 States chart (Chart 0 on slide 4) ────────────────
+    # Replace top-10 Chart 0 with large events panel
     states_chart_shape = find_shape(slide4, "Chart 0")
     if states_chart_shape:
-        st_chart_rows = [(abbr, cnt, None) for abbr, cnt, _ in st_rows_asc]
-        update_chart_data(
-            states_chart_shape,
-            sheet_name="Top10_States",
-            data_rows=st_chart_rows,
-            series_configs=[
-                {"col_idx": 1, "data_col": 2, "label": "Students",
-                 "label_row": 2, "label_col": 2},
-            ]
-        )
+        left_c, top_c = states_chart_shape.left, states_chart_shape.top
+        width_c, height_c = states_chart_shape.width, states_chart_shape.height
+        slide4.shapes._spTree.remove(states_chart_shape._element)
+        ev_png = large_events_png(large_events)
+        pic2 = slide4.shapes.add_picture(io.BytesIO(ev_png), left_c, top_c, width_c, height_c)
+        pic2.name = "Chart 0"
+
+    # Remove old family engagement bullets + box
+    for sname in ["Text 8", "Text 9", "Shape 7"]:
+        sh = find_shape(slide4, sname)
+        if sh:
+            slide4.shapes._spTree.remove(sh._element)
+
+    # Slide 4 footnote and footer
+    if footnote4:
+        replace_shape_text(slide4, "Text 10", footnote4)
+    if footer_text:
+        replace_shape_text(slide4, "Text 12", footer_text)
 
     # ── save output ──────────────────────────────────────────────
     OUTPUT_DIR.mkdir(exist_ok=True)
@@ -588,9 +604,9 @@ def main():
         safe_ay  = ay.replace("–","-").replace("/","-")
         out_path = OUTPUT_DIR / f"Hankamer_Report_AY{safe_ay}.pptx"
 
-    # Generate and insert geo tile grid on slide 3
-    geo_png = generate_geo_tiles_png(all_state_rows, grand_total=grand_total)
-    replace_hex_map(prs.slides[2], {}, _png_override=geo_png)
+    # Replace slide 3 image with top 10 states bar chart
+    top10_png = top10_bars_png([(a, c) for a, c, _ in st_rows])
+    replace_hex_map(prs.slides[2], {}, _png_override=top10_png)
 
     prs.save(str(out_path))
     print(f"\n✔ Report saved to: {out_path}")

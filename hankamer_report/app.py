@@ -11,6 +11,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 from geo_tiles import generate_geo_tiles_png
+from slide_visuals import top10_bars_png, companion_dots_png, large_events_png
 
 # ── page config ──────────────────────────────────────────────────
 st.set_page_config(
@@ -472,10 +473,10 @@ if uploaded_file:
             if "slide3_footnote" in bullets:
                 set_text(slide3, "Text 16", bullets["slide3_footnote"])
 
-            # Replace static image with geo tile grid
+            # Replace static image with top 10 states bar chart
             geo_target = find_shape(slide3, "Image 0")
             if geo_target:
-                png_bytes = generate_geo_tiles_png(all_state_rows, grand_total=grand_total)
+                png_bytes = top10_bars_png(st_rows)
                 left, top, width, height = (geo_target.left, geo_target.top,
                                             geo_target.width, geo_target.height)
                 slide3.shapes._spTree.remove(geo_target._element)
@@ -483,37 +484,77 @@ if uploaded_file:
                     io.BytesIO(png_bytes), left, top, width, height)
                 pic.name = "Image 0"
 
+            # ── parse large_events ───────────────────────────
+            events_df = sheets.get("large_events")
+            large_events = []
+            if events_df is not None:
+                for i in range(2, len(events_df)):
+                    name   = sv(events_df, i, 0)
+                    n_ev   = iv(events_df, i, 1, 0)
+                    per_ev = iv(events_df, i, 2, 0)
+                    tot_s  = iv(events_df, i, 3, 0)
+                    tot_v  = iv(events_df, i, 4, 0)
+                    note   = sv(events_df, i, 5)
+                    if not name or not isinstance(n_ev, int):
+                        continue
+                    # total students = col D if filled, else n_ev * per_ev
+                    students = tot_s if tot_s else (n_ev * per_ev if n_ev and per_ev else per_ev or None)
+                    large_events.append({
+                        "name":     name,
+                        "students": students if students else None,
+                        "total":    tot_v if tot_v else None,
+                        "note":     note or "",
+                    })
+            if not large_events:
+                # fallback hardcoded defaults
+                large_events = [
+                    {"name":"Fall Premiere",          "students":445,"total":820,"note":""},
+                    {"name":"Spring Premiere",         "students":445,"total":820,"note":""},
+                    {"name":"Baylor Scholars Days",    "students":100,"total":None,"note":"2 events, ~100 students each"},
+                    {"name":"Invitation 2 Excellence", "students":204,"total":None,"note":"2 events, 204 total students"},
+                ]
+
             log("✔ Slide 3 done")
 
             # ── SLIDE 4 ───────────────────────────────────────────
             progress.progress(90, text="Building slide 4...")
+
+            # Remove old companion table, replace with dot-scale PNG
             tbl_s = find_shape(slide4, "Table 0")
             if tbl_s:
-                tbl = tbl_s.table
-                for i, (ctype, freq) in enumerate(comp_rows):
-                    if i + 1 < len(tbl.rows):
-                        set_table_cell(tbl, i+1, 0, ctype)
-                        set_table_cell(tbl, i+1, 1, freq)
+                left_t  = tbl_s.left
+                top_t   = tbl_s.top
+                width_t = tbl_s.width
+                height_t = tbl_s.height
+                slide4.shapes._spTree.remove(tbl_s._element)
+                comp_png = companion_dots_png(comp_rows)
+                pic = slide4.shapes.add_picture(
+                    io.BytesIO(comp_png), left_t, top_t, width_t, height_t)
+                pic.name = "Table 0"
 
-            sh = find_shape(slide4, "Text 9")
-            if sh and sh.has_text_frame:
-                for i, key in enumerate(["engage_1","engage_2","engage_3"]):
-                    if i < len(sh.text_frame.paragraphs) and key in bullets:
-                        p = sh.text_frame.paragraphs[i]
-                        if p.runs: p.runs[0].text = bullets[key]
+            # Replace old top-10 chart (Chart 0) with large events panel
+            st_chart = find_shape(slide4, "Chart 0")
+            if st_chart:
+                left_c  = st_chart.left
+                top_c   = st_chart.top
+                width_c = st_chart.width
+                height_c = st_chart.height
+                slide4.shapes._spTree.remove(st_chart._element)
+                ev_png = large_events_png(large_events)
+                pic2 = slide4.shapes.add_picture(
+                    io.BytesIO(ev_png), left_c, top_c, width_c, height_c)
+                pic2.name = "Chart 0"
+
+            # Remove old family engagement bullets box (Text 9 + Shape 7)
+            for sname in ["Text 8", "Text 9", "Shape 7"]:
+                sh = find_shape(slide4, sname)
+                if sh:
+                    slide4.shapes._spTree.remove(sh._element)
 
             if footnote4:
                 set_text(slide4, "Text 10", footnote4)
             if footer_text:
                 set_text(slide4, "Text 12", footer_text)
-
-            st_chart = find_shape(slide4, "Chart 0")
-            if st_chart:
-                st_chart_rows = [(abbr, cnt, None) for abbr, cnt in st_rows_asc]
-                update_chart(st_chart, "Top10_States", st_chart_rows, [
-                    {"col_idx":1,"data_col":2,"label":"Students",
-                     "label_row":2,"label_col":2},
-                ])
 
             log("✔ Slide 4 done")
 
