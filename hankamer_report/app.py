@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from hex_map import generate_hex_map_png
 
 # ── page config ──────────────────────────────────────────────────
 st.set_page_config(
@@ -458,6 +459,18 @@ if uploaded_file:
 
             if "slide3_footnote" in bullets:
                 set_text(slide3, "Text 16", bullets["slide3_footnote"])
+
+            # Replace static hex map with auto-generated one
+            state_counts = {abbr: cnt for abbr, cnt in st_rows}
+            hex_target = find_shape(slide3, "Image 0")
+            if hex_target:
+                png_bytes = generate_hex_map_png(state_counts)
+                left, top, width, height = (hex_target.left, hex_target.top,
+                                            hex_target.width, hex_target.height)
+                slide3.shapes._spTree.remove(hex_target._element)
+                pic = slide3.shapes.add_picture(
+                    io.BytesIO(png_bytes), left, top, width, height)
+                pic.name = "Image 0"
 
             log("✔ Slide 3 done")
 
