@@ -29,6 +29,7 @@ from pptx.util import Pt
 from pptx.dml.color import RGBColor
 from lxml import etree
 from hex_map import generate_hex_map_png
+from geo_tiles import generate_geo_tiles_png
 import io
 
 # ── paths ────────────────────────────────────────────────────────
@@ -221,8 +222,8 @@ def update_chart_data(chart_shape, sheet_name: str, data_rows: list,
 
 # ── hex map helpers ───────────────────────────────────────────────
 
-def replace_hex_map(slide, state_counts, shape_name="Image 0"):
-    """Replace the static hex map PNG on slide 3 with an auto-generated one."""
+def replace_hex_map(slide, state_counts, shape_name="Image 0", _png_override=None):
+    """Replace the static image on slide 3 with an auto-generated one."""
     target = None
     for shape in slide.shapes:
         if shape.name == shape_name:
@@ -232,7 +233,7 @@ def replace_hex_map(slide, state_counts, shape_name="Image 0"):
         raise ValueError(f"Shape '{shape_name}' not found. "
                          f"Available: {[s.name for s in slide.shapes]}")
 
-    png_bytes = generate_hex_map_png(state_counts)
+    png_bytes = _png_override if _png_override else generate_hex_map_png(state_counts)
     left, top, width, height = target.left, target.top, target.width, target.height
 
     sp_tree = slide.shapes._spTree
@@ -261,6 +262,7 @@ def main():
     att_df  = get_sheet(sheets, "attendance")
     gy_df   = get_sheet(sheets, "grad_year")
     st_df   = get_sheet(sheets, "top10_states")
+    all_st_df = sheets.get("all_states")  # optional — falls back to top10
     reg_df  = get_sheet(sheets, "regional")
     comp_df = get_sheet(sheets, "companion")
     bul_df  = get_sheet(sheets, "bullets")
@@ -338,6 +340,17 @@ def main():
             st_rows.append((abbr, cnt, name))
     # Sort ascending for chart (chart reads bottom→top)
     st_rows_asc = sorted(st_rows, key=lambda x: x[1])
+
+    # ── parse all_states (for tile grid on slide 3)
+    all_state_rows = []
+    if all_st_df is not None:
+        for i in range(2, 52):
+            abbr = str_val(all_st_df, i, 0)
+            cnt  = int_val(all_st_df, i, 1, 0)
+            if abbr and cnt:
+                all_state_rows.append((abbr, cnt))
+    if not all_state_rows:
+        all_state_rows = [(a, c) for a, c, _ in st_rows]  # fallback to top10
 
     # ── parse regional ───────────────────────────────────────────
     # Rows 3–8 (0-based: 2–7): A=region, B=count
@@ -575,9 +588,9 @@ def main():
         safe_ay  = ay.replace("–","-").replace("/","-")
         out_path = OUTPUT_DIR / f"Hankamer_Report_AY{safe_ay}.pptx"
 
-    # Generate and insert hex map on slide 3
-    state_counts = {abbr: cnt for abbr, cnt, _ in st_rows}
-    replace_hex_map(prs.slides[2], state_counts)
+    # Generate and insert geo tile grid on slide 3
+    geo_png = generate_geo_tiles_png(all_state_rows)
+    replace_hex_map(prs.slides[2], {}, _png_override=geo_png)
 
     prs.save(str(out_path))
     print(f"\n✔ Report saved to: {out_path}")

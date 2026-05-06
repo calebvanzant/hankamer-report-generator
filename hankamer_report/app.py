@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
-from hex_map import generate_hex_map_png
 
 # ── page config ──────────────────────────────────────────────────
 st.set_page_config(
@@ -106,7 +105,7 @@ if uploaded_file:
             sheets = xl.sheet_names
             uploaded_file.seek(0)
             required = {"config","attendance","grad_year",
-                        "top10_states","regional","companion","bullets"}
+                        "top10_states","all_states","regional","companion","bullets"}
             found    = set(sheets)
             missing  = required - found
             if missing:
@@ -332,6 +331,18 @@ if uploaded_file:
             oos_pct_str = f"{round(oos_cnt / reg_total * 100)}%" if reg_total else "0%"
             intl_str    = str(intl_cnt)
 
+            # ── parse all_states ─────────────────────────────
+            all_states_df = sheets.get("all_states")
+            all_state_rows = []
+            if all_states_df is not None:
+                for i in range(2, len(all_states_df)):
+                    abbr = sv(all_states_df, i, 0)
+                    cnt  = iv(all_states_df, i, 1, 0)
+                    if abbr and cnt:
+                        all_state_rows.append((abbr, cnt))
+            if not all_state_rows:
+                all_state_rows = st_rows  # fallback to top10
+
             # ── parse companion ───────────────────────────────────
             comp_df   = sheets["companion"]
             comp_rows = []
@@ -459,18 +470,6 @@ if uploaded_file:
 
             if "slide3_footnote" in bullets:
                 set_text(slide3, "Text 16", bullets["slide3_footnote"])
-
-            # Replace static hex map with auto-generated one
-            state_counts = {abbr: cnt for abbr, cnt in st_rows}
-            hex_target = find_shape(slide3, "Image 0")
-            if hex_target:
-                png_bytes = generate_hex_map_png(state_counts)
-                left, top, width, height = (hex_target.left, hex_target.top,
-                                            hex_target.width, hex_target.height)
-                slide3.shapes._spTree.remove(hex_target._element)
-                pic = slide3.shapes.add_picture(
-                    io.BytesIO(png_bytes), left, top, width, height)
-                pic.name = "Image 0"
 
             log("✔ Slide 3 done")
 
